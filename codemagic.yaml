@@ -10,7 +10,7 @@ workflows:
       xcode: latest
       ios_signing:
         distribution_type: app_store
-        bundle_identifier: com.yingyuketang.zaojiao_anime
+        bundle_identifier: com.yingyuketang.zaojiaoanime
       groups:
         - appstore_credentials   # 需在 Codemagic 后台创建该变量组（含 API Key 三件套）
     scripts:
@@ -19,7 +19,7 @@ workflows:
           keychain initialize
       - name: 获取签名证书与描述文件
         script: |
-          app-store-connect fetch-signing-files com.yingyuketang.zaojiao_anime \
+          app-store-connect fetch-signing-files com.yingyuketang.zaojiaoanime \
             --type IOS_APP_STORE \
             --create
       - name: 应用签名配置

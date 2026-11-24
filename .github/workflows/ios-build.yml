@@ -1,0 +1,81 @@
+name: iOS Build
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.3"
+          channel: stable
+
+      - name: 写入 App Store Connect API Key
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/auth
+          cat > ~/auth/AuthKey.p8 << 'EOF'
+          $ASC_PRIVATE_KEY
+          EOF
+          cat > ~/auth/api_key.json << EOF
+          {"key_id": "$ASC_KEY_ID", "issuer_id": "$ASC_ISSUER_ID", "key": "${ASC_PRIVATE_KEY//$'\n'/\\n}"}
+          EOF
+
+      - name: 注入签名团队
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          gem install xcodeproj -v 1.24.0 --no-document
+          ruby -e "
+          require 'xcodeproj'
+          p = Xcodeproj::Project.open('ios/Runner.xcodeproj')
+          p.targets.each do |t|
+            t.build_configurations.each do |c|
+              c.build_settings['DEVELOPMENT_TEAM'] = ENV['TEAM_ID']
+              c.build_settings['CODE_SIGN_STYLE'] = 'Automatic'
+            end
+          end
+          p.save
+          "
+
+      - name: 拉取签名证书与描述文件
+        env:
+          TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: |
+          mkdir -p signing
+          fastlane sigh app_identifier:com.yingyuketang.zaojiao_anime \
+            appstore:true \
+            api_key_path:~/auth/api_key.json \
+            provisioning_name:"zaojiao appstore" \
+            output_path:signing \
+            filename:"zaojiao_appstore.mobileprovision" \
+            skip_provisioning_profiles:false \
+            force:true
+          # 导出 fastlane 创建/下载的分发证书（.cer->p12 由 fastlane 自动装进 keychain）
+          security find-identity -v -p codesigning
+
+      - name: Flutter 构建 ipa
+        run: |
+          flutter config --no-analytics
+          flutter build ipa --release --export-options-plist=ios/ExportOptions.plist
+
+      - name: 上传 TestFlight
+        run: |
+          IPA=$(ls build/ios/ipa/*.ipa | head -1)
+          fastlane pilot upload \
+            api_key_path:~/auth/api_key.json \
+            ipa:"$IPA" \
+            skip_waiting_for_build_processing:true
+
+      - name: 备份产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-ipa
+          path: build/ios/ipa/*.ipa

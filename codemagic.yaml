@@ -1,0 +1,42 @@
+# Codemagic 云构建配置：早教动画课堂 iOS 版
+# 文档：https://docs.codemagic.io/yaml-basic-example/
+workflows:
+  ios-release:
+    name: 早教动画课堂 iOS
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    environment:
+      flutter: 3.24.3
+      xcode: latest
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: com.yingyuketang.zaojiao_anime
+      groups:
+        - appstore_credentials   # 需在 Codemagic 后台创建该变量组（含 API Key 三件套）
+    scripts:
+      - name: 设置签名钥匙串
+        script: |
+          keychain initialize
+      - name: 获取签名证书与描述文件
+        script: |
+          app-store-connect fetch-signing-files com.yingyuketang.zaojiao_anime \
+            --type IOS_APP_STORE \
+            --create
+      - name: 应用签名配置
+        script: |
+          xcode-project use-profiles
+      - name: Flutter 构建 ipa
+        script: |
+          flutter packages get
+          flutter build ipa --release
+      - name: 校验产物
+        script: |
+          ls -la build/ios/ipa/
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        # 构建成功自动上传 App Store Connect（TestFlight）
+        api_key: $APP_STORE_CONNECT_API_KEY
+        submit_to_testflight: true
+        expire_build_day_count: 90
